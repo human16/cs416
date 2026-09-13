@@ -1,0 +1,7 @@
+1.4 Report
+
+1. The stack contains functions in memory as they are executed.
+2. The program counter goes through instructions and represents the progress of the program's execution. I used GDB to locate the program counter by compiling stack.c with the debugging flag (-g), which then allowed me to see the line "read_only_string[0] = 'X';" along with it's program counter with the number in the aligator brackets.
+3. to get the desired results for this part of the assignment, the program counter was adjusted manually to skip the instrcution that caused the segmentation fault.
+
+
