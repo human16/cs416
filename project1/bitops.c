@@ -19,7 +19,7 @@ static unsigned int myaddress = 4026544704;   // Binary  would be 11110000000000
 static unsigned int first_clear_bit(unsigned int value)
 {
 	//Implement your code here
-	
+	return 0;
 }
 
 
@@ -28,10 +28,10 @@ static unsigned int first_clear_bit(unsigned int value)
  * Function to set a bit at "index" bitmap
  */
 static void set_bit_at_index(char *bitmap, int index)
-{
-    //Implement your code here	
-
-    return;
+{	
+    bitmap[index / BITMAP_SIZE] |= (1 << (index % BITMAP_SIZE));
+    printf("Bit set at index %d\n", index);
+    return ;
 }
 
 
@@ -43,7 +43,8 @@ static int get_bit_at_index(char *bitmap, int index)
 {
     //Get to the location in the character bitmap array
     //Implement your code here
-    
+    printf("Bit at index %d is %d\n", index, bitmap[index / BITMAP_SIZE] & (1 << (index % BITMAP_SIZE)));
+    return bitmap[index / BITMAP_SIZE] & (1 << (index % BITMAP_SIZE));
 }
 
 

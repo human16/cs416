@@ -19,9 +19,8 @@ void signal_handle(int signalno) {
     /* Step 2: Handle segmentation fault and change the stack*/
     //offending instruction length is 6 bytes.
 
-    int *ret_add_loc; //some location;
-
-    ret_add_loc = &signalno +6;
+    int *ret_add_loc = &signalno + 15;
+    *ret_add_loc += 6;
     
     return ;
 
