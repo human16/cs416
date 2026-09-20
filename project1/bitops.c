@@ -18,8 +18,8 @@ static unsigned int myaddress = 4026544704;   // Binary  would be 11110000000000
  */
 static unsigned int first_clear_bit(unsigned int value)
 {
-	//Implement your code here
-	return 0;
+    unsigned int flipped = ~value;
+    return sizeof(unsigned int) * 8 - __builtin_clz(flipped)-1;
 }
 
 
@@ -29,7 +29,7 @@ static unsigned int first_clear_bit(unsigned int value)
  */
 static void set_bit_at_index(char *bitmap, int index)
 {	
-    bitmap[index / BITMAP_SIZE] |= (1 << (index % BITMAP_SIZE));
+    bitmap[index / (sizeof(char) * 8)] |= (1 << (index % sizeof(char) * 8));
     printf("Bit set at index %d\n", index);
     return ;
 }
@@ -43,8 +43,8 @@ static int get_bit_at_index(char *bitmap, int index)
 {
     //Get to the location in the character bitmap array
     //Implement your code here
-    printf("Bit at index %d is %d\n", index, bitmap[index / BITMAP_SIZE] & (1 << (index % BITMAP_SIZE)));
-    return bitmap[index / BITMAP_SIZE] & (1 << (index % BITMAP_SIZE));
+    printf("Bit at index %d is %d\n", index, bitmap[index / (sizeof(char) * 8)] & (1 << (index % sizeof(char) * 8)));
+    return bitmap[index / (sizeof(char) * 8)] & (1 << (index % sizeof(char) * 8));
 }
 
 
@@ -64,11 +64,13 @@ int main () {
     char *bitmap = (char *)malloc(BITMAP_SIZE);  //We can store 32 bits (4*8-bit per character)
     memset(bitmap,0, BITMAP_SIZE); //clear everything
     
+    // printf("%d\n", get_bit_at_index(bitmap, GET_BIT_INDEX));
+
     /* 
      * Let's try to set the bit 
      */
     set_bit_at_index(bitmap, SET_BIT_INDEX);
-    
+    // printf("%d\n", get_bit_at_index(bitmap, SET_BIT_INDEX));
     /* 
      * Let's try to read bit)
      */
