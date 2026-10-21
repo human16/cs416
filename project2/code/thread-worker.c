@@ -1,8 +1,8 @@
 // File:	thread-worker.c
 
-// List all group member's name:
-// username of iLab:
-// iLab Server:
+// List all group member's name: Ben Yavin, May Takahashi
+// username of iLab: by240
+// iLab Server: 
 
 #include "thread-worker.h"
 #include <stdio.h>
@@ -22,8 +22,15 @@ double avg_resp_time=0;
 
 // INITAILIZE ALL YOUR OTHER VARIABLES HERE
 // YOUR CODE HERE
-ucontext_t *curr_context = NULL;
+node *runqueue_head = NULL;
+
+worker_t worker_id_counter = 0; // Counter for assigning unique thread IDs
+
+// Where the scheduler is at
 ucontext_t *scheduler_context = NULL;
+
+// My current worker tcb
+tcb *curr_tcb = NULL;
 
 /* create a new thread */
 int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
@@ -35,8 +42,24 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
        // - make it ready for the execution.
 
        // YOUR CODE HERE
+	if (scheduler_context == NULL) 
+	{
+		scheduler_context = (ucontext_t *)malloc(sizeof(ucontext_t));
+		getcontext(scheduler_context);
+		
+		scheduler_context->uc_link = NULL;
+		void *stack = malloc(SIGSTKSZ);
+		scheduler_context->uc_stack.ss_sp = stack;
+		scheduler_context->uc_stack.ss_size = SIGSTKSZ;
+		scheduler_context->uc_stack.ss_flags = 0;
+		makecontext(scheduler_context, (void (*)(void))schedule, 0);
+	}
+
+
 	tcb *worker_tcb = (tcb *)malloc(sizeof(tcb));
-	worker_tcb->thread_id = *thread;
+	worker_tcb->thread_id = worker_id_counter;
+	*thread = worker_id_counter;
+	worker_id_counter++;
 	worker_tcb->status = 0; 
 	worker_tcb->thread_context = (ucontext_t *)malloc(sizeof(ucontext_t));
 	
@@ -52,7 +75,6 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 	worker_tcb->thread_arg = arg;
 	makecontext(worker_tcb->thread_context, (void (*)(void))function, 1, arg);
 
-
 	// Add to runqueue
 
     return 0;
@@ -65,8 +87,9 @@ int worker_yield() {
 	// - switch from thread context to scheduler context
 
 	// YOUR CODE HERE
-
-	swapcontext(curr_context, scheduler_context);
+	// tot_cntx_switches++; move to scheduler.
+	curr_tcb->status = 0; // Change status to Ready
+	swapcontext(curr_tcb->thread_context, scheduler_context);
 
 	return 0;
 };
@@ -76,6 +99,8 @@ void worker_exit(void *value_ptr) {
 	// - de-allocate any dynamic memory created when starting this thread
 
 	// YOUR CODE HERE
+
+
 };
 
 
@@ -86,6 +111,8 @@ int worker_join(worker_t thread, void **value_ptr) {
 	// - de-allocate any dynamic memory created by the joining thread
   
 	// YOUR CODE HERE
+	
+
 	return 0;
 };
 
@@ -95,6 +122,8 @@ int worker_mutex_init(worker_mutex_t *mutex,
 	//- initialize data structures for this mutex
 
 	// YOUR CODE HERE
+	mutex->lock = 0;
+	mutex->blocked_threads = NULL;
 	return 0;
 };
 
@@ -107,6 +136,10 @@ int worker_mutex_lock(worker_mutex_t *mutex) {
         // context switch to the scheduler thread
 
         // YOUR CODE HERE
+		while (__sync_lock_test_and_set(&mutex->lock, 1)){
+			worker_yield();
+		}
+		mutex->lock = 1;
         return 0;
 };
 
@@ -117,6 +150,7 @@ int worker_mutex_unlock(worker_mutex_t *mutex) {
 	// so that they could compete for mutex later.
 
 	// YOUR CODE HERE
+	mutex->lock = 0;
 	return 0;
 };
 

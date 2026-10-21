@@ -1,7 +1,7 @@
 // File:	worker_t.h
 
-// List all group member's name:
-// username of iLab:
+// List all group member's name: Ben Yavin, May Takahashi
+// username of iLab: by240
 // iLab Server:
 
 #ifndef WORKER_T_H
@@ -22,6 +22,11 @@
 
 
 typedef uint worker_t;
+
+typedef struct node {
+	worker_t thread_id;
+	struct node *next;
+} node;
 
 typedef struct TCB {
 	/* add important states in a thread control block */
@@ -53,6 +58,8 @@ typedef struct worker_mutex_t {
 	/* add something here */
 
 	// YOUR CODE HERE
+	int lock; // 0: unlocked, 1: locked
+	node *blocked_threads; // List of threads blocked on this mutex
 } worker_mutex_t;
 
 /* define your data structures here: */
