@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <ucontext.h>
+#include <sys/time.h>
 
 
 //Global counter for total context switches and 
@@ -32,6 +33,46 @@ ucontext_t *scheduler_context = NULL;
 // My current worker tcb
 tcb *curr_tcb = NULL;
 
+
+// queue functions
+
+//enqueue function for PSJF, sorted by counter least to greatest
+void enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
+	node *new_node = (node *)malloc(sizeof(node));
+	new_node->thread_id = thread_id;
+	new_node->thread_tcb = thread_tcb;
+	new_node->next = NULL;
+
+	if (*head == NULL) {
+		*head = new_node;
+	} else {
+		node *temp = *head;
+		while (temp->next != NULL) {
+			if (temp->thread_tcb->counter <= thread_tcb->counter) {  // I think I implemented it correctly, idk though
+				temp=temp->next; 
+			} else {
+				break;
+			}
+		}
+		new_node->next = temp->next;
+		temp->next = new_node;
+	}
+}
+
+node *dequeue(node **head) {
+	if (*head == NULL) {
+		return NULL;
+	}
+
+	node *temp = *head;
+	*head = (*head)->next;
+	return temp;
+}
+
+int is_empty(node *head) {
+	return head == NULL;
+}
+
 /* create a new thread */
 int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
 
@@ -44,18 +85,56 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
        // YOUR CODE HERE
 	if (scheduler_context == NULL) 
 	{
-		scheduler_context = (ucontext_t *)malloc(sizeof(ucontext_t));
-		getcontext(scheduler_context);
+		// Bunch of setup for scheduler tcb
+		tcb *scheduler_tcb = (tcb *)malloc(sizeof(tcb));
+		scheduler_tcb->thread_id = worker_id_counter;
+		worker_id_counter++;
+		scheduler_tcb->status = 1; // Scheduler is always running
+		scheduler_tcb->thread_context = (ucontext_t *)malloc(sizeof(ucontext_t));
+		scheduler_tcb->thread_function = NULL;
+		scheduler_tcb->thread_arg = NULL;
+		getcontext(scheduler_tcb->thread_context);
 		
+		//after getting the context, setting up
+		scheduler_context = scheduler_tcb->thread_context;
 		scheduler_context->uc_link = NULL;
 		void *stack = malloc(SIGSTKSZ);
 		scheduler_context->uc_stack.ss_sp = stack;
 		scheduler_context->uc_stack.ss_size = SIGSTKSZ;
 		scheduler_context->uc_stack.ss_flags = 0;
 		makecontext(scheduler_context, (void (*)(void))schedule, 0);
+
+		//sets the first context to the scheduler
+		curr_tcb = scheduler_tcb;
+
+		// |||||||||||||||||||||||||||||||
+        //           timer setup
+	    // |||||||||||||||||||||||||||||||
+
+		struct sigaction sa;
+		memset (&sa, 0, sizeof (sa));
+		// sa.sa_handler = &ring;
+		sigaction (SIGPROF, &sa, NULL);
+
+		// Create timer struct
+		struct itimerval timer;
+
+		// Set up what the timer should reset to after the timer goes off
+		timer.it_interval.tv_usec = 0; 
+		timer.it_interval.tv_sec = 0;
+
+		// Set up the current timer to go off in 1 second
+		// Note: if both of the following values are zero
+		//       the timer will not be active, and the timer
+		//       will never go off even if you set the interval value
+		timer.it_value.tv_usec = 0;
+		timer.it_value.tv_sec = 1;
+
+		// Set the timer up (start the timer)
+		setitimer(ITIMER_PROF, &timer, NULL);
 	}
 
-
+	// setting up worker tcb
 	tcb *worker_tcb = (tcb *)malloc(sizeof(tcb));
 	worker_tcb->thread_id = worker_id_counter;
 	*thread = worker_id_counter;
@@ -65,6 +144,7 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 	
 	getcontext(worker_tcb->thread_context);
 	
+	// setting up stack for worker tcb context
 	void *stack=malloc(SIGSTKSZ);
 	worker_tcb->thread_context->uc_link=NULL;
 	worker_tcb->thread_context->uc_stack.ss_sp=stack;
@@ -76,7 +156,7 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 	makecontext(worker_tcb->thread_context, (void (*)(void))function, 1, arg);
 
 	// Add to runqueue
-
+	enqueue(&runqueue_head, worker_tcb->thread_id, worker_tcb);
     return 0;
 };
 
@@ -88,9 +168,13 @@ int worker_yield() {
 
 	// YOUR CODE HERE
 	// tot_cntx_switches++; move to scheduler.
+
+	// just like, give up control bro
 	curr_tcb->status = 0; // Change status to Ready
 	swapcontext(curr_tcb->thread_context, scheduler_context);
+	enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); // Add back to run queue
 
+	// need to reenter queue (runqueue_head)
 	return 0;
 };
 

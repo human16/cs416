@@ -25,6 +25,7 @@ typedef uint worker_t;
 
 typedef struct node {
 	worker_t thread_id;
+	tcb *thread_tcb;
 	struct node *next;
 } node;
 
@@ -37,7 +38,7 @@ typedef struct TCB {
 	// thread status
 	// 0: ready, 1: scheduled, 2: blocked
 	int status;
-
+	int counter;
 	// thread context
 	ucontext_t *thread_context;
 	//                   ^
