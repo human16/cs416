@@ -37,7 +37,7 @@ tcb *curr_tcb = NULL;
 // queue functions
 
 //enqueue function for PSJF, sorted by counter least to greatest
-void enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
+void psjf_enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
 	node *new_node = (node *)malloc(sizeof(node));
 	new_node->thread_id = thread_id;
 	new_node->thread_tcb = thread_tcb;
@@ -55,6 +55,24 @@ void enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
 			}
 		}
 		new_node->next = temp->next;
+		temp->next = new_node;
+	}
+}
+
+//
+void mlfq_enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
+	node *new_node = (node *)malloc(sizeof(node));
+	new_node->thread_id = thread_id;
+	new_node->thread_tcb = thread_tcb;
+	new_node->next = NULL;
+
+	if (*head == NULL) {
+		*head = new_node;
+	} else {
+		node *temp = *head;
+		while (temp->next != NULL) {
+			temp=temp->next; 
+		}
 		temp->next = new_node;
 	}
 }
@@ -85,6 +103,11 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
        // YOUR CODE HERE
 	if (scheduler_context == NULL) 
 	{
+		// |||||||||||||||||||||||||||||||
+        //        scheduler setup
+	    // |||||||||||||||||||||||||||||||
+
+
 		// Bunch of setup for scheduler tcb
 		tcb *scheduler_tcb = (tcb *)malloc(sizeof(tcb));
 		scheduler_tcb->thread_id = worker_id_counter;
@@ -140,6 +163,8 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 	*thread = worker_id_counter;
 	worker_id_counter++;
 	worker_tcb->status = 0; 
+	worker_tcb->counter = 0; 
+	worker_tcb->start_time = time(NULL);
 	worker_tcb->thread_context = (ucontext_t *)malloc(sizeof(ucontext_t));
 	
 	getcontext(worker_tcb->thread_context);
@@ -156,7 +181,7 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 	makecontext(worker_tcb->thread_context, (void (*)(void))function, 1, arg);
 
 	// Add to runqueue
-	enqueue(&runqueue_head, worker_tcb->thread_id, worker_tcb);
+	psjf_enqueue(&runqueue_head, worker_tcb->thread_id, worker_tcb);
     return 0;
 };
 
@@ -172,7 +197,7 @@ int worker_yield() {
 	// just like, give up control bro
 	curr_tcb->status = 0; // Change status to Ready
 	swapcontext(curr_tcb->thread_context, scheduler_context);
-	enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); // Add back to run queue
+	psjf_enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); // Add back to run queue
 
 	// need to reenter queue (runqueue_head)
 	return 0;
@@ -183,8 +208,10 @@ void worker_exit(void *value_ptr) {
 	// - de-allocate any dynamic memory created when starting this thread
 
 	// YOUR CODE HERE
-
-
+	if (value_ptr != NULL) {
+		curr_tcb->return_value = value_ptr; // Store return value
+	}
+	curr_tcb->status = 2;
 };
 
 

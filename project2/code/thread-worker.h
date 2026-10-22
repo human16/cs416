@@ -39,6 +39,7 @@ typedef struct TCB {
 	// 0: ready, 1: scheduled, 2: blocked
 	int status;
 	int counter;
+	time_t start_time;
 	// thread context
 	ucontext_t *thread_context;
 	//                   ^
@@ -48,6 +49,8 @@ typedef struct TCB {
 	// __________________|
 	// And more ... 
 
+
+	void *return_value;
 	void *(*thread_function)(void*);
 	void *thread_arg;
 
