@@ -17,11 +17,18 @@
 #define RUNNING 1
 #define BLOCKED 2
 
+#define QUANTUM 100 
+
+#define MAX_THREADS 100
+
 //Global counter for total context switches and 
 //average turn around and response time
 long tot_cntx_switches=0;
 double avg_turn_time=0;
 double avg_resp_time=0;
+
+double total_turn_time=0;
+double total_resp_time=0;
 double num_threads=0;
 
 
@@ -36,6 +43,8 @@ ucontext_t *scheduler_context = NULL;
 
 // My current worker tcb
 tcb *curr_tcb = NULL;
+
+tcb *all_threads[MAX_THREADS]; 
 
 
 // queue functions
@@ -88,6 +97,7 @@ node *dequeue(node **head) {
 
 	node *temp = *head;
 	*head = (*head)->next;
+	temp->next = NULL;
 	return temp;
 }
 
@@ -154,7 +164,7 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 		// Note: if both of the following values are zero
 		//       the timer will not be active, and the timer
 		//       will never go off even if you set the interval value
-		timer.it_value.tv_usec = 0;
+		timer.it_value.tv_usec = QUANTUM*1000;;
 		timer.it_value.tv_sec = 1;
 
 		// Set the timer up (start the timer)
@@ -201,9 +211,9 @@ int worker_yield() {
 	// tot_cntx_switches++; move to scheduler.
 
 	// just like, give up control bro
-	curr_tcb->status = READY; // Change status to Ready
+	curr_tcb->status = READY; 
+	psjf_enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); 
 	swapcontext(curr_tcb->thread_context, scheduler_context);
-	psjf_enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); // Add back to run queue
 
 	// need to reenter queue (runqueue_head)
 	return 0;
@@ -218,7 +228,9 @@ void worker_exit(void *value_ptr) {
 		curr_tcb->return_value = value_ptr; // Store return value
 	}
 	curr_tcb->status = BLOCKED;
-	avg_turn_time += difftime(time(NULL), curr_tcb->start_time); //
+	total_turn_time += difftime(time(NULL), curr_tcb->start_time);
+	avg_turn_time = total_turn_time / num_threads;
+
 
 	if (curr_tcb->joining_thread != NULL) {
 		// If there is a joining thread, unblock it
@@ -226,12 +238,12 @@ void worker_exit(void *value_ptr) {
 		psjf_enqueue(&runqueue_head, curr_tcb->joining_thread->thread_id, curr_tcb->joining_thread);
 	}
 
-	free(curr_tcb->thread_context->uc_stack.ss_sp); 
-	curr_tcb->thread_context->uc_stack.ss_sp = NULL; // Free stack memory
-	free(curr_tcb->thread_context);
-	curr_tcb->thread_context = NULL; // Free context memory
-	free(curr_tcb);
-	curr_tcb = NULL;
+	// free(curr_tcb->thread_context->uc_stack.ss_sp); 
+	// curr_tcb->thread_context->uc_stack.ss_sp = NULL; // Free stack memory
+	// free(curr_tcb->thread_context);
+	// curr_tcb->thread_context = NULL; // Free context memory
+	// free(curr_tcb);
+	// curr_tcb = NULL;
 
 	setcontext(scheduler_context); 
 };
@@ -243,8 +255,36 @@ int worker_join(worker_t thread, void **value_ptr) {
 	// - wait for a specific thread to terminate
 	// - de-allocate any dynamic memory created by the joining thread
   
+	tcb *joining_tcb = NULL;
 	// YOUR CODE HERE
-	
+	for (int i = 0; i < MAX_THREADS; i++) {
+		if (all_threads[i] != NULL && all_threads[i]->thread_id == thread) {
+			joining_tcb = all_threads[i];
+			break;
+		}
+	}
+	if (joining_tcb == NULL) {
+		return -1;
+	}
+
+	if (joining_tcb->status == RUNNING || joining_tcb->status == READY) {
+		curr_tcb->status = BLOCKED;
+		joining_tcb->joining_thread = curr_tcb;
+		swapcontext(curr_tcb->thread_context, scheduler_context);
+	}
+
+	if (value_ptr != NULL) {
+		*value_ptr = joining_tcb->return_value;
+	}
+
+	all_threads[joining_tcb->thread_id] = NULL;
+	if (joining_tcb->thread_context != NULL) {
+		free(joining_tcb->thread_context->uc_stack.ss_sp);
+		free(joining_tcb->thread_context);
+	}
+	free(joining_tcb);
+
+	thread_exit(NULL);
 
 	return 0;
 };
@@ -269,11 +309,13 @@ int worker_mutex_lock(worker_mutex_t *mutex) {
         // context switch to the scheduler thread
 
         // YOUR CODE HERE
-		while (__sync_lock_test_and_set(&mutex->lock, 1)){
-			worker_yield();
-		}
-		mutex->lock = 1;
-        return 0;
+	while (__sync_lock_test_and_set(&mutex->lock, 1)){
+		curr_tcb->status = BLOCKED;
+		mlfq_enqueue(&mutex->blocked_threads, curr_tcb->thread_id, curr_tcb);
+		swapcontext(curr_tcb->thread_context, scheduler_context);
+	}
+	// mutex->lock = 1;
+	return 0;
 };
 
 /* release the mutex lock */
@@ -283,7 +325,15 @@ int worker_mutex_unlock(worker_mutex_t *mutex) {
 	// so that they could compete for mutex later.
 
 	// YOUR CODE HERE
-	mutex->lock = 0;
+	while(mutex->blocked_threads != NULL) {
+		node *unblocked_node = dequeue(&mutex->blocked_threads);
+		unblocked_node->thread_tcb->status = READY;
+		psjf_enqueue(&runqueue_head, unblocked_node->thread_id, unblocked_node->thread_tcb);
+		free(unblocked_node);
+	}
+
+	__sync_lock_release(&mutex->lock); 
+
 	return 0;
 };
 
@@ -291,7 +341,12 @@ int worker_mutex_unlock(worker_mutex_t *mutex) {
 /* destroy the mutex */
 int worker_mutex_destroy(worker_mutex_t *mutex) {
 	// - de-allocate dynamic memory created in worker_mutex_init
+	if (mutex->lock == 1 || worker(mutex->blocked_threads) != NULL) {
+		worker_mutex_unlock(mutex);
+	}
 
+	mutex->lock = 0;
+	mutex->blocked_threads = NULL;
 	return 0;
 };
 

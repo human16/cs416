@@ -40,6 +40,7 @@ typedef struct TCB {
 	int status;
 	int counter;
 	time_t start_time;
+	int responded;
 	// thread context
 	ucontext_t *thread_context;
 	//                   ^
