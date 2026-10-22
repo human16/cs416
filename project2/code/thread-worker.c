@@ -13,12 +13,16 @@
 #include <ucontext.h>
 #include <sys/time.h>
 
+#define READY 0
+#define RUNNING 1
+#define BLOCKED 2
 
 //Global counter for total context switches and 
 //average turn around and response time
 long tot_cntx_switches=0;
 double avg_turn_time=0;
 double avg_resp_time=0;
+double num_threads=0;
 
 
 // INITAILIZE ALL YOUR OTHER VARIABLES HERE
@@ -112,7 +116,7 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 		tcb *scheduler_tcb = (tcb *)malloc(sizeof(tcb));
 		scheduler_tcb->thread_id = worker_id_counter;
 		worker_id_counter++;
-		scheduler_tcb->status = 1; // Scheduler is always running
+		scheduler_tcb->status = RUNNING; // Scheduler is always running
 		scheduler_tcb->thread_context = (ucontext_t *)malloc(sizeof(ucontext_t));
 		scheduler_tcb->thread_function = NULL;
 		scheduler_tcb->thread_arg = NULL;
@@ -157,12 +161,14 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 		setitimer(ITIMER_PROF, &timer, NULL);
 	}
 
+	num_threads++; 
+
 	// setting up worker tcb
 	tcb *worker_tcb = (tcb *)malloc(sizeof(tcb));
 	worker_tcb->thread_id = worker_id_counter;
 	*thread = worker_id_counter;
 	worker_id_counter++;
-	worker_tcb->status = 0; 
+	worker_tcb->status = READY; 
 	worker_tcb->counter = 0; 
 	worker_tcb->start_time = time(NULL);
 	worker_tcb->thread_context = (ucontext_t *)malloc(sizeof(ucontext_t));
@@ -195,7 +201,7 @@ int worker_yield() {
 	// tot_cntx_switches++; move to scheduler.
 
 	// just like, give up control bro
-	curr_tcb->status = 0; // Change status to Ready
+	curr_tcb->status = READY; // Change status to Ready
 	swapcontext(curr_tcb->thread_context, scheduler_context);
 	psjf_enqueue(&runqueue_head, curr_tcb->thread_id, curr_tcb); // Add back to run queue
 
@@ -211,7 +217,23 @@ void worker_exit(void *value_ptr) {
 	if (value_ptr != NULL) {
 		curr_tcb->return_value = value_ptr; // Store return value
 	}
-	curr_tcb->status = 2;
+	curr_tcb->status = BLOCKED;
+	avg_turn_time += difftime(time(NULL), curr_tcb->start_time); //
+
+	if (curr_tcb->joining_thread != NULL) {
+		// If there is a joining thread, unblock it
+		curr_tcb->joining_thread->status = READY;
+		psjf_enqueue(&runqueue_head, curr_tcb->joining_thread->thread_id, curr_tcb->joining_thread);
+	}
+
+	free(curr_tcb->thread_context->uc_stack.ss_sp); 
+	curr_tcb->thread_context->uc_stack.ss_sp = NULL; // Free stack memory
+	free(curr_tcb->thread_context);
+	curr_tcb->thread_context = NULL; // Free context memory
+	free(curr_tcb);
+	curr_tcb = NULL;
+
+	setcontext(scheduler_context); 
 };
 
 

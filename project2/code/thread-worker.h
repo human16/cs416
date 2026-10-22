@@ -54,6 +54,8 @@ typedef struct TCB {
 	void *(*thread_function)(void*);
 	void *thread_arg;
 
+	struct TCB *joining_thread;
+
 	// YOUR CODE HERE
 } tcb; 
 
