@@ -12,10 +12,13 @@
 #include <unistd.h>
 #include <ucontext.h>
 #include <sys/time.h>
+#include <string.h>
+#include <time.h>
 
 #define READY 0
 #define RUNNING 1
 #define BLOCKED 2
+#define TERMINATED 3
 
 #define QUANTUM 100 
 
@@ -46,6 +49,8 @@ tcb *curr_tcb = NULL;
 
 tcb *all_threads[MAX_THREADS]; 
 
+static void schedule(void);
+
 
 // queue functions
 
@@ -56,16 +61,14 @@ void psjf_enqueue(node **head, worker_t thread_id, tcb *thread_tcb) {
 	new_node->thread_tcb = thread_tcb;
 	new_node->next = NULL;
 
-	if (*head == NULL) {
+	if (*head == NULL || (*head)->thread_tcb->counter > thread_tcb->counter) {
+		new_node->next = *head;
 		*head = new_node;
 	} else {
 		node *temp = *head;
-		while (temp->next != NULL) {
-			if (temp->thread_tcb->counter <= thread_tcb->counter) {  // I think I implemented it correctly, idk though
-				temp=temp->next; 
-			} else {
-				break;
-			}
+		while (temp->next != NULL &&
+		       temp->next->thread_tcb->counter <= thread_tcb->counter) {
+			temp = temp->next;
 		}
 		new_node->next = temp->next;
 		temp->next = new_node;
@@ -194,9 +197,19 @@ int worker_create(worker_t * thread, pthread_attr_t * attr, void *(*function)(vo
 
 	worker_tcb->thread_function = function;
 	worker_tcb->thread_arg = arg;
+	worker_tcb->return_value = NULL;
+	worker_tcb->joining_thread = NULL;
 	makecontext(worker_tcb->thread_context, (void (*)(void))function, 1, arg);
 
 	// Add to runqueue
+	if (worker_tcb->thread_id >= MAX_THREADS) {
+		free(worker_tcb->thread_context->uc_stack.ss_sp);
+		free(worker_tcb->thread_context);
+		free(worker_tcb);
+		num_threads--;
+		return -1;
+	}
+	all_threads[worker_tcb->thread_id] = worker_tcb;
 	psjf_enqueue(&runqueue_head, worker_tcb->thread_id, worker_tcb);
     return 0;
 };
@@ -227,7 +240,7 @@ void worker_exit(void *value_ptr) {
 	if (value_ptr != NULL) {
 		curr_tcb->return_value = value_ptr; // Store return value
 	}
-	curr_tcb->status = BLOCKED;
+	curr_tcb->status = TERMINATED;
 	total_turn_time += difftime(time(NULL), curr_tcb->start_time);
 	avg_turn_time = total_turn_time / num_threads;
 
@@ -267,7 +280,7 @@ int worker_join(worker_t thread, void **value_ptr) {
 		return -1;
 	}
 
-	if (joining_tcb->status == RUNNING || joining_tcb->status == READY) {
+	if (joining_tcb->status != TERMINATED) {
 		curr_tcb->status = BLOCKED;
 		joining_tcb->joining_thread = curr_tcb;
 		swapcontext(curr_tcb->thread_context, scheduler_context);
@@ -283,8 +296,6 @@ int worker_join(worker_t thread, void **value_ptr) {
 		free(joining_tcb->thread_context);
 	}
 	free(joining_tcb);
-
-	thread_exit(NULL);
 
 	return 0;
 };
@@ -341,7 +352,7 @@ int worker_mutex_unlock(worker_mutex_t *mutex) {
 /* destroy the mutex */
 int worker_mutex_destroy(worker_mutex_t *mutex) {
 	// - de-allocate dynamic memory created in worker_mutex_init
-	if (mutex->lock == 1 || worker(mutex->blocked_threads) != NULL) {
+	if (mutex->lock == 1 || mutex->blocked_threads != NULL) {
 		worker_mutex_unlock(mutex);
 	}
 
@@ -406,4 +417,3 @@ void print_app_stats(void) {
 // Feel free to add any other functions you need
 
 // YOUR CODE HERE
-

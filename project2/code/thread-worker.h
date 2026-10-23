@@ -18,18 +18,15 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <ucontext.h>
 
 
 typedef uint worker_t;
 
-typedef struct node {
-	worker_t thread_id;
-	tcb *thread_tcb;
-	struct node *next;
-} node;
+typedef struct TCB tcb;
 
-typedef struct TCB {
+struct TCB {
 	/* add important states in a thread control block */
 	
 	// thread Id
@@ -58,7 +55,13 @@ typedef struct TCB {
 	struct TCB *joining_thread;
 
 	// YOUR CODE HERE
-} tcb; 
+};
+
+typedef struct node {
+	worker_t thread_id;
+	tcb *thread_tcb;
+	struct node *next;
+} node;
 
 /* mutex struct definition */
 typedef struct worker_mutex_t {
