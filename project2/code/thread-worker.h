@@ -2,7 +2,7 @@
 
 // List all group member's name: Ben Yavin, May Takahashi
 // username of iLab: by240
-// iLab Server:
+// iLab Server: cs.ilab.rutgers.edu
 
 #ifndef WORKER_T_H
 #define WORKER_T_H
@@ -11,6 +11,7 @@
 
 /* To use Linux pthread Library in Benchmark, you have to comment the USE_WORKERS macro */
 #define USE_WORKERS 1
+#define MLFQ_LEVELS 4
 
 /* include lib header files that you need here: */
 #include <unistd.h>
@@ -36,10 +37,14 @@ struct TCB {
 	// 0: ready, 1: scheduled, 2: blocked
 	int status;
 	int counter;
-	time_t start_time;
+	int priority;
+	double level_cpu_ms;
+	struct timespec start_time;
+	struct timespec dispatch_cpu_start;
 	int responded;
 	// thread context
 	ucontext_t *thread_context;
+	ucontext_t context_storage;
 	//                   ^
 	// thread stack    --|
     //                   |
